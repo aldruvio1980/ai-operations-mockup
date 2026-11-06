@@ -467,12 +467,25 @@
       toast("Please use a text file under 2 MB.", true);
       return;
     }
+    const name = String(file.name || "").toLowerCase();
+    const textName = /\.(txt|eml|md|markdown|csv)$/.test(name);
+    if (!textName && file.type && !file.type.startsWith("text/")) {
+      const kind = /pdf/.test(file.type) ? "PDF" : /image/.test(file.type) ? "image" : "binary";
+      toast(`That looks like a ${kind}. Upload a text invoice (.txt, .eml, .md) instead; PDFs and images need OCR.`, true);
+      els.fileInput.value = "";
+      return;
+    }
     const reader = new FileReader();
     reader.onload = () => {
       state.demoToken += 1;
       const raw = String(reader.result || "");
       if (!raw.trim()) {
         toast("The selected file is empty.", true);
+        return;
+      }
+      if (/^%PDF-/.test(raw) || raw.includes("\u0000")) {
+        toast("That file is not readable text. Save the invoice as .txt, .eml, or .md first.", true);
+        els.fileInput.value = "";
         return;
       }
       const ok = runPipeline(raw, file.name, { silent: false });

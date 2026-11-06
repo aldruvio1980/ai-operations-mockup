@@ -27,7 +27,7 @@ RULES: dict[str, Any] = {
     "high_value_line_threshold": 10_000.00,
     "bulk_quantity_threshold": 200,
     "money_tolerance": 0.02,
-    "allowed_units": {"EA", "CY", "LF", "SF", "SY", "TON", "PR", "BX", "PK", "GAL", "LB"},
+    "allowed_units": {"EA", "CY", "LF", "SF", "SY", "TON", "PR", "BX", "PK", "GAL", "LB", "HR", "HRS"},
     "price_envelopes": [
         {"keywords": ("STEEL BEAM", "W24", "W18", "W21"), "min": 900.0, "max": 1800.0, "unit": "EA"},
         {"keywords": ("CONCRETE", "READY-MIX"), "min": 140.0, "max": 240.0, "unit": "CY"},

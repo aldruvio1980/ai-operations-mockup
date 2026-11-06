@@ -64,6 +64,14 @@ def _first_match(patterns: list[str], text: str) -> str | None:
     return None
 
 
+def _strip_markdown(value: str) -> str:
+    """Remove common Markdown decoration while preserving line structure."""
+    text = re.sub(r"\*\*|__|`", "", value)
+    text = re.sub(r"(?m)^\s{0,3}#{1,6}\s+", "", text)
+    text = re.sub(r"(?m)^\s*[*+-]\s+", "", text)
+    return text.strip()
+
+
 def _normalise_date(value: str | None) -> str | None:
     """
     Return an ISO date when the format is unambiguous.
@@ -73,7 +81,16 @@ def _normalise_date(value: str | None) -> str | None:
     """
     if not value:
         return None
-    for fmt in ("%m/%d/%Y", "%Y-%m-%d", "%m-%d-%Y", "%d/%m/%Y"):
+    for fmt in (
+        "%m/%d/%Y",
+        "%Y-%m-%d",
+        "%m-%d-%Y",
+        "%d/%m/%Y",
+        "%B %d, %Y",
+        "%b %d, %Y",
+        "%B %d %Y",
+        "%b %d %Y",
+    ):
         try:
             return datetime.strptime(value.strip(), fmt).date().isoformat()
         except ValueError:
@@ -84,6 +101,31 @@ def _normalise_date(value: str | None) -> str | None:
 def _extract_supplier(text: str, emails: list[str]) -> dict[str, Any]:
     """Extract supplier identity using labelled fields and safe fallbacks."""
     supplier_name: str | None = None
+    supplier_email: str | None = None
+    supplier_phone: str | None = None
+    address: str | None = None
+
+    vendor_match = re.search(
+        r"(?im)(?:^|\n)[^\n]*(?:Billed\s*By|Vendor)[^\n]*\n"
+        r"(.*?)(?=\n\s*#{1,6}\s|\n[^\n]*(?:Billed\s*To|Ship\s*To|Client)\b|$)",
+        text,
+        re.DOTALL,
+    )
+    if vendor_match:
+        block = vendor_match.group(1)
+        block_lines = [_strip_markdown(line) for line in block.splitlines()]
+        block_lines = [line for line in block_lines if line]
+        supplier_name = block_lines[0] if block_lines else None
+        email_match = _EMAIL_RE.search(block)
+        phone_match = _PHONE_RE.search(block)
+        if email_match:
+            supplier_email = email_match.group(0)
+        if phone_match:
+            supplier_phone = phone_match.group(0).strip()
+        for candidate in block_lines[1:]:
+            if not address and re.search(r"\d", candidate) and len(candidate) > 8:
+                address = candidate
+                break
 
     # Prefer an uppercase company-style line (e.g. "APEX STEEL & SUPPLY CO.").
     company_re = re.compile(
@@ -91,7 +133,7 @@ def _extract_supplier(text: str, emails: list[str]) -> dict[str, Any]:
         r"(?:CO|INC|LLC|CORP|LTD)\.?)\s*$"
     )
     company_match = company_re.search(text)
-    if company_match:
+    if not supplier_name and company_match:
         supplier_name = company_match.group("name").strip()
 
     # Fallbacks keep the pipeline useful even when the company line is missing.
@@ -104,20 +146,21 @@ def _extract_supplier(text: str, emails: list[str]) -> dict[str, Any]:
         else:
             supplier_name = "UNKNOWN SUPPLIER"
 
-    sender_match = re.search(
-        r"(?im)^From:\s*.*?([\w.+-]+@[\w-]+\.[\w.-]+)", text
-    )
-    supplier_email = sender_match.group(1) if sender_match else (emails[0] if emails else None)
+    if not supplier_email:
+        sender_match = re.search(
+            r"(?im)^From:\s*.*?([\w.+-]+@[\w-]+\.[\w.-]+)", text
+        )
+        supplier_email = sender_match.group(1) if sender_match else (emails[0] if emails else None)
 
-    phone_match = _PHONE_RE.search(text)
-    phone = phone_match.group(0).strip() if phone_match else None
+    if not supplier_phone:
+        phone_match = _PHONE_RE.search(text)
+        supplier_phone = phone_match.group(0).strip() if phone_match else None
 
     # The line immediately after the supplier name is usually the remit address.
-    address: str | None = None
-    if company_match:
+    if not address and company_match:
         tail = text[company_match.end():].splitlines()
         for line in tail:
-            candidate = line.strip()
+            candidate = _strip_markdown(line)
             if candidate and re.search(r"\d", candidate) and len(candidate) > 8:
                 address = candidate
                 break
@@ -125,7 +168,7 @@ def _extract_supplier(text: str, emails: list[str]) -> dict[str, Any]:
     return {
         "name": supplier_name,
         "email": supplier_email,
-        "phone": phone,
+        "phone": supplier_phone,
         "address": address,
     }
 
@@ -199,8 +242,130 @@ def _extract_totals(text: str) -> dict[str, Any]:
     }
 
 
+def _parse_markdown_table(
+    lines: list[str],
+) -> tuple[list[dict[str, Any]], list[str]] | None:
+    """Parse a Markdown/pipe table with description, quantity, rate, amount."""
+    header_index = -1
+    columns: dict[str, int] | None = None
+
+    for index, line in enumerate(lines):
+        stripped = line.strip()
+        if not stripped.startswith("|"):
+            continue
+        cells = [_strip_markdown(cell).lower() for cell in stripped.split("|")[1:-1]]
+        if (
+            any("description" in cell for cell in cells)
+            and any("quantity" in cell or cell == "qty" for cell in cells)
+            and any("rate" in cell or "price" in cell for cell in cells)
+            and any("amount" in cell or "total" in cell for cell in cells)
+        ):
+            header_index = index
+            columns = {
+                "item": next(
+                    (i for i, cell in enumerate(cells) if cell in {"item", "#", "no", "no."}),
+                    -1,
+                ),
+                "description": next(
+                    (i for i, cell in enumerate(cells) if "description" in cell), -1
+                ),
+                "quantity": next(
+                    (i for i, cell in enumerate(cells) if "quantity" in cell or cell == "qty"),
+                    -1,
+                ),
+                "unit_price": next(
+                    (i for i, cell in enumerate(cells) if "rate" in cell or "price" in cell),
+                    -1,
+                ),
+                "amount": next(
+                    (i for i, cell in enumerate(cells) if "amount" in cell or "total" in cell),
+                    -1,
+                ),
+            }
+            break
+
+    if columns is None:
+        return None
+
+    items: list[dict[str, Any]] = []
+    warnings: list[str] = []
+    for index in range(header_index + 1, len(lines)):
+        line = lines[index].strip()
+        if not line.startswith("|"):
+            break
+        cells = [_strip_markdown(cell) for cell in line.split("|")[1:-1]]
+        if not cells:
+            continue
+        if all(not cell or re.fullmatch(r":?-{2,}:?", cell) for cell in cells):
+            continue
+
+        description = (cells[columns["description"]] if columns["description"] >= 0 else "").strip()
+        if not description:
+            warnings.append(f"Could not parse line-item row: {line!r}")
+            continue
+
+        quantity_cell = (cells[columns["quantity"]] if columns["quantity"] >= 0 else "").strip()
+        quantity_match = re.match(r"^([\d,.]+)\s*([A-Za-z]+)?", quantity_cell)
+        quantity = _to_number(quantity_match.group(1)) if quantity_match else None
+        unit = (
+            quantity_match.group(2).upper()
+            if quantity_match and quantity_match.group(2)
+            else "EA"
+        )
+        if unit in {"HOUR", "HOURS", "HR"}:
+            unit = "HRS"
+
+        unit_price = _to_number(
+            cells[columns["unit_price"]] if columns["unit_price"] >= 0 else None
+        )
+        declared_line_total = _to_number(
+            cells[columns["amount"]] if columns["amount"] >= 0 else None
+        )
+        computed_line_total = (
+            round(quantity * unit_price, 2)
+            if quantity is not None and unit_price is not None
+            else None
+        )
+        item_number = (
+            _to_number(cells[columns["item"]]) if columns["item"] >= 0 else None
+        )
+
+        if quantity is None:
+            warnings.append(f"Line item has an invalid quantity: {line!r}")
+        if unit_price is None:
+            warnings.append(f"Line item has an invalid unit price: {line!r}")
+        if (
+            computed_line_total is not None
+            and declared_line_total is not None
+            and abs(computed_line_total - declared_line_total) > 0.02
+        ):
+            warnings.append(
+                "Line-item arithmetic mismatch for "
+                f"{description!r}: computed {computed_line_total:.2f}, "
+                f"document says {declared_line_total:.2f}."
+            )
+
+        items.append(
+            {
+                "line_number": int(item_number) if item_number is not None else len(items) + 1,
+                "description": description,
+                "quantity": quantity,
+                "unit": unit,
+                "unit_price": unit_price,
+                "declared_line_total": declared_line_total,
+                "computed_line_total": computed_line_total,
+            }
+        )
+
+    return items, warnings
+
+
 def _parse_line_items(lines: list[str]) -> tuple[list[dict[str, Any]], list[str]]:
     """Extract numbered line items and return any row-level parse warnings."""
+    markdown_table = _parse_markdown_table(lines)
+    if markdown_table is not None:
+        return markdown_table
+
     items: list[dict[str, Any]] = []
     warnings: list[str] = []
 
@@ -288,26 +453,32 @@ def parse_invoice(raw_text: str, source: str = "<memory>") -> dict[str, Any]:
         raise ValueError("Input document is empty; nothing to parse.")
 
     lines = raw_text.splitlines()
+    plain_text = _strip_markdown(raw_text)
     emails = list(dict.fromkeys(_EMAIL_RE.findall(raw_text)))
 
     metadata = {
         "invoice_number": _first_match(
-            [r"^INVOICE\s*(?:NO|NUMBER|#)\.?\s*[:\-]?\s*([A-Z0-9][A-Z0-9/\-]*)",], raw_text
+            [r"^INVOICE\s*(?:NO|NUMBER|#)\.?\s*[:#\-]?\s*([A-Z0-9][A-Z0-9/\-]*)",],
+            plain_text,
         ),
         "invoice_date": _normalise_date(
-            _first_match([r"^INVOICE\s*DATE\s*[:\-]?\s*([\d/.\-]+)"], raw_text)
+            _first_match([r"^INVOICE\s*DATE\s*[:\-]?\s*([^\n]+)$"], plain_text)
         ),
         "due_date": _normalise_date(
-            _first_match([r"^DUE\s*DATE\s*[:\-]?\s*([\d/.\-]+)"], raw_text)
+            _first_match([r"^DUE\s*DATE\s*[:\-]?\s*([^\n]+)$"], plain_text)
         ),
         "po_number": _first_match(
-            [r"^P\.?O\.?\s*(?:NUMBER|NO|#)\.?\s*[:\-]?\s*([A-Z0-9][A-Z0-9/\-]*)",],
-            raw_text,
+            [r"^P\.?O\.?\s*(?:NUMBER|NO|#)?\.?\s*[:\-]?\s*([A-Z0-9][A-Z0-9/\-]*)",],
+            plain_text,
         ),
-        "project": _first_match([r"^PROJECT\s*[:\-]\s*(.+)$"], raw_text),
-        "ship_via": _first_match([r"^SHIP\s*VIA\s*[:\-]\s*(.+)$"], raw_text),
+        "project": _first_match([r"^PROJECT\s*[:\-]\s*(.+)$"], plain_text),
+        "ship_via": _first_match([r"^SHIP\s*VIA\s*[:\-]\s*(.+)$"], plain_text),
         "payment_terms": _first_match(
-            [r"^(?:PAYMENT\s+TERMS|TERMS)\s*[:\-]\s*(.+)$"], raw_text
+            [
+                r"^(?:PAYMENT\s+TERMS|TERMS)\s*[:\-]\s*(.+)$",
+                r"^((?:Payment\s+is\s+due|Net\s+\d+)\b[^\n]*)$",
+            ],
+            plain_text,
         ),
     }
 
@@ -324,7 +495,7 @@ def parse_invoice(raw_text: str, source: str = "<memory>") -> dict[str, Any]:
         "supplier": _extract_supplier(raw_text, emails),
         "metadata": metadata,
         "line_items": line_items,
-        "totals_declared": _extract_totals(raw_text),
+        "totals_declared": _extract_totals(plain_text),
         "notes": _extract_notes(lines),
         "emails": emails,
         "parse_warnings": parse_warnings,

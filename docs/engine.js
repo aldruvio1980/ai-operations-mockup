@@ -61,7 +61,7 @@ Payment terms: Net 30. Remit to billing@apexsteelsupply.com`;
     highValueLineThreshold: 10000.0,
     bulkQuantityThreshold: 200,
     moneyTolerance: 0.02,
-    allowedUnits: new Set(["EA", "CY", "LF", "SF", "SY", "TON", "PR", "BX", "PK", "GAL", "LB"]),
+    allowedUnits: new Set(["EA", "CY", "LF", "SF", "SY", "TON", "PR", "BX", "PK", "GAL", "LB", "HR", "HRS"]),
     priceEnvelopes: [
       { keywords: ["STEEL BEAM", "W24", "W18", "W21"], min: 900.0, max: 1800.0, unit: "EA" },
       { keywords: ["CONCRETE", "READY-MIX"], min: 140.0, max: 240.0, unit: "CY" },
@@ -80,6 +80,31 @@ Payment terms: Net 30. Remit to billing@apexsteelsupply.com`;
     "(" + MONEY + ")\\s+([A-Za-z]{1,5})\\s*@\\s*\\$?\\s*(" + MONEY + ")\\s*=\\s*\\$?\\s*(" + MONEY + ")",
     "i"
   );
+
+  const MONTHS = {
+    january: "01", jan: "01",
+    february: "02", feb: "02",
+    march: "03", mar: "03",
+    april: "04", apr: "04",
+    may: "05",
+    june: "06", jun: "06",
+    july: "07", jul: "07",
+    august: "08", aug: "08",
+    september: "09", sep: "09", sept: "09",
+    october: "10", oct: "10",
+    november: "11", nov: "11",
+    december: "12", dec: "12"
+  };
+
+  function stripMarkdown(value) {
+    return String(value === null || value === undefined ? "" : value)
+      .replace(/\*\*/g, "")
+      .replace(/__/g, "")
+      .replace(/`/g, "")
+      .replace(/^\s{0,3}#{1,6}\s+/gm, "")
+      .replace(/^\s*[*+-]\s+/gm, "")
+      .trim();
+  }
 
   function round2(value) {
     return Math.round((Number(value) + Number.EPSILON) * 100) / 100;
@@ -113,30 +138,57 @@ Payment terms: Net 30. Remit to billing@apexsteelsupply.com`;
       }
     }
     if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return text;
+    const named = text.match(/^([A-Za-z]+)\s+(\d{1,2}),?\s+(\d{4})$/);
+    if (named && MONTHS[named[1].toLowerCase()]) {
+      return `${named[3]}-${MONTHS[named[1].toLowerCase()]}-${String(named[2]).padStart(2, "0")}`;
+    }
     return text;
   }
 
   function extractSupplier(text, emails) {
     let supplierName = null;
+    let supplierEmail = null;
+    let supplierPhone = null;
+    let address = null;
+
+    const vendorSection = text.match(
+      /(?:^|\n)[^\n]*(?:Billed\s*By|Vendor)[^\n]*\n([\s\S]*?)(?=\n\s*#{1,6}\s|\n[^\n]*(?:Billed\s*To|Ship\s*To|Client)\b|$)/i
+    );
+    if (vendorSection) {
+      const block = vendorSection[1];
+      const blockLines = block.split(/\r?\n/).map(stripMarkdown).filter(Boolean);
+      supplierName = blockLines[0] || null;
+      const emailMatch = block.match(EMAIL_RE);
+      const phoneMatch = block.match(PHONE_RE);
+      if (emailMatch) supplierEmail = emailMatch[0];
+      if (phoneMatch) supplierPhone = phoneMatch[0].trim();
+      for (const candidate of blockLines.slice(1)) {
+        if (!address && /\d/.test(candidate) && candidate.length > 8) address = candidate;
+      }
+    }
+
     const companyRe = /^([A-Z][A-Z0-9 &'.,\-]{2,}(?:CO|INC|LLC|CORP|LTD)\.?)[ \t]*$/m;
     const companyMatch = text.match(companyRe);
+    if (!supplierName && companyMatch) supplierName = companyMatch[1].trim();
 
-    if (companyMatch) {
-      supplierName = companyMatch[1].trim();
-    } else {
+    if (!supplierName) {
       const domainMatch = text.match(/^From:\s*[\w.+-]+@([\w-]+)\.[\w.-]+/im);
       supplierName = domainMatch ? domainMatch[1].replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()) : "UNKNOWN SUPPLIER";
     }
 
-    const senderMatch = text.match(/^From:\s*.*?([\w.+-]+@[\w-]+\.[\w.-]+)/im);
-    const supplierEmail = senderMatch ? senderMatch[1] : (emails[0] || null);
-    const phoneMatch = text.match(PHONE_RE);
+    if (!supplierEmail) {
+      const senderMatch = text.match(/^From:\s*.*?([\w.+-]+@[\w-]+\.[\w.-]+)/im);
+      supplierEmail = senderMatch ? senderMatch[1] : (emails[0] || null);
+    }
+    if (!supplierPhone) {
+      const phoneMatch = text.match(PHONE_RE);
+      supplierPhone = phoneMatch ? phoneMatch[0].trim() : null;
+    }
 
-    let address = null;
-    if (companyMatch) {
+    if (!address && companyMatch) {
       const tail = text.slice(companyMatch.index + companyMatch[0].length).split(/\r?\n/);
       for (const line of tail) {
-        const candidate = line.trim();
+        const candidate = stripMarkdown(line);
         if (candidate && /\d/.test(candidate) && candidate.length > 8) {
           address = candidate;
           break;
@@ -147,7 +199,7 @@ Payment terms: Net 30. Remit to billing@apexsteelsupply.com`;
     return {
       name: supplierName,
       email: supplierEmail,
-      phone: phoneMatch ? phoneMatch[0].trim() : null,
+      phone: supplierPhone,
       address: address
     };
   }
@@ -177,7 +229,7 @@ Payment terms: Net 30. Remit to billing@apexsteelsupply.com`;
     let taxLine = null;
 
     for (const line of lines) {
-      const trimmed = line.trim();
+      const trimmed = stripMarkdown(line);
       if (/^SUBTOTAL\s*[:\-]?\s*\$?\s*/i.test(trimmed) && subtotal === null) {
         const match = trimmed.match(new RegExp("^SUBTOTAL\\s*[:\\-]?\\s*\\$?\\s*(" + MONEY + ")", "i"));
         if (match) subtotal = toNumber(match[1]);
@@ -212,7 +264,90 @@ Payment terms: Net 30. Remit to billing@apexsteelsupply.com`;
     };
   }
 
+  function parseMarkdownTable(lines) {
+    let headerIndex = -1;
+    let columns = null;
+
+    for (let index = 0; index < lines.length; index += 1) {
+      const line = lines[index].trim();
+      if (!line.startsWith("|")) continue;
+      const cells = line.split("|").slice(1, -1).map((cell) => stripMarkdown(cell).toLowerCase());
+      if (
+        cells.some((cell) => cell.includes("description")) &&
+        cells.some((cell) => cell.includes("quantity") || cell === "qty") &&
+        cells.some((cell) => cell.includes("rate") || cell.includes("price")) &&
+        cells.some((cell) => cell.includes("amount") || cell.includes("total"))
+      ) {
+        headerIndex = index;
+        columns = {
+          item: cells.findIndex((cell) => cell === "item" || cell === "#" || cell === "no" || cell === "no."),
+          description: cells.findIndex((cell) => cell.includes("description")),
+          quantity: cells.findIndex((cell) => cell.includes("quantity") || cell === "qty"),
+          unitPrice: cells.findIndex((cell) => cell.includes("rate") || cell.includes("price")),
+          amount: cells.findIndex((cell) => cell.includes("amount") || cell.includes("total"))
+        };
+        break;
+      }
+    }
+
+    if (!columns) return null;
+
+    const items = [];
+    const warnings = [];
+    for (let index = headerIndex + 1; index < lines.length; index += 1) {
+      const line = lines[index].trim();
+      if (!line.startsWith("|")) break;
+      const cells = line.split("|").slice(1, -1).map((cell) => stripMarkdown(cell));
+      if (!cells.length) continue;
+      if (cells.every((cell) => !cell || /^:?-{2,}:?$/.test(cell))) continue;
+
+      const description = (cells[columns.description] || "").trim();
+      if (!description) {
+        warnings.push(`Could not parse line-item row: ${line}`);
+        continue;
+      }
+
+      const quantityCell = (cells[columns.quantity] || "").trim();
+      const quantityMatch = quantityCell.match(/^([\d,.]+)\s*([A-Za-z]+)?/);
+      const quantity = quantityMatch ? toNumber(quantityMatch[1]) : null;
+      let unit = quantityMatch && quantityMatch[2] ? quantityMatch[2].toUpperCase() : "EA";
+      if (["HOUR", "HOURS", "HR"].includes(unit)) unit = "HRS";
+
+      const unitPrice = toNumber(cells[columns.unitPrice]);
+      const declaredTotal = toNumber(cells[columns.amount]);
+      const computedTotal = quantity !== null && unitPrice !== null ? round2(quantity * unitPrice) : null;
+      const itemNumber = columns.item >= 0 ? toNumber(cells[columns.item]) : null;
+
+      if (quantity === null) warnings.push(`Line item has an invalid quantity: ${line}`);
+      if (unitPrice === null) warnings.push(`Line item has an invalid unit price: ${line}`);
+      if (
+        computedTotal !== null &&
+        declaredTotal !== null &&
+        Math.abs(computedTotal - declaredTotal) > RULES.moneyTolerance
+      ) {
+        warnings.push(
+          `Line-item arithmetic mismatch for ${description}: computed ${computedTotal.toFixed(2)}, document says ${declaredTotal.toFixed(2)}.`
+        );
+      }
+
+      items.push({
+        line_number: itemNumber !== null ? itemNumber : items.length + 1,
+        description: description,
+        quantity: quantity,
+        unit: unit,
+        unit_price: unitPrice,
+        declared_line_total: declaredTotal,
+        computed_line_total: computedTotal
+      });
+    }
+
+    return { items, warnings };
+  }
+
   function parseLineItems(lines) {
+    const markdownTable = parseMarkdownTable(lines);
+    if (markdownTable) return markdownTable;
+
     const items = [];
     const warnings = [];
     let start = 0;
@@ -284,15 +419,19 @@ Payment terms: Net 30. Remit to billing@apexsteelsupply.com`;
     }
 
     const lines = rawText.split(/\r?\n/);
+    const plainText = stripMarkdown(rawText);
     const emails = Array.from(new Set(rawText.match(EMAIL_RE) || []));
     const metadata = {
-      invoice_number: firstMatch(["^INVOICE\\s*(?:NO|NUMBER|#)\\.?\\s*[:\\-]?\\s*([A-Z0-9][A-Z0-9/\\-]*)"], rawText),
-      invoice_date: normaliseDate(firstMatch(["^INVOICE\\s*DATE\\s*[:\\-]?\\s*([\\d/.\\-]+)"], rawText)),
-      due_date: normaliseDate(firstMatch(["^DUE\\s*DATE\\s*[:\\-]?\\s*([\\d/.\\-]+)"], rawText)),
-      po_number: firstMatch(["^P\\.?O\\.?\\s*(?:NUMBER|NO|#)?\\.?\\s*[:\\-]?\\s*([A-Z0-9][A-Z0-9/\\-]*)"], rawText),
-      project: firstMatch(["^PROJECT\\s*[:\\-]\\s*(.+)$"], rawText),
-      ship_via: firstMatch(["^SHIP\\s*VIA\\s*[:\\-]\\s*(.+)$"], rawText),
-      payment_terms: firstMatch(["^(?:PAYMENT\\s+TERMS|TERMS)\\s*[:\\-]\\s*(.+)$"], rawText)
+      invoice_number: firstMatch(["^INVOICE\\s*(?:NO|NUMBER|#)\\.?\\s*[:#\\-]?\\s*([A-Z0-9][A-Z0-9/\\-]*)"], plainText),
+      invoice_date: normaliseDate(firstMatch(["^INVOICE\\s*DATE\\s*[:\\-]?\\s*([^\\n]+)$"], plainText)),
+      due_date: normaliseDate(firstMatch(["^DUE\\s*DATE\\s*[:\\-]?\\s*([^\\n]+)$"], plainText)),
+      po_number: firstMatch(["^P\\.?O\\.?\\s*(?:NUMBER|NO|#)?\\.?\\s*[:\\-]?\\s*([A-Z0-9][A-Z0-9/\\-]*)"], plainText),
+      project: firstMatch(["^PROJECT\\s*[:\\-]\\s*(.+)$"], plainText),
+      ship_via: firstMatch(["^SHIP\\s*VIA\\s*[:\\-]\\s*(.+)$"], plainText),
+      payment_terms: firstMatch(
+        ["^(?:PAYMENT\\s+TERMS|TERMS)\\s*[:\\-]\\s*(.+)$", "^((?:Payment\\s+is\\s+due|Net\\s+\\d+)\\b[^\\n]*)$"],
+        plainText
+      )
     };
 
     const lineResult = parseLineItems(lines);
@@ -308,7 +447,7 @@ Payment terms: Net 30. Remit to billing@apexsteelsupply.com`;
       supplier: extractSupplier(rawText, emails),
       metadata: metadata,
       line_items: lineResult.items,
-      totals_declared: extractTotals(rawText),
+      totals_declared: extractTotals(plainText),
       notes: extractNotes(lines),
       emails: emails,
       parse_warnings: lineResult.warnings

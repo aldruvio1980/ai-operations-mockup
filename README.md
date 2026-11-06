@@ -109,7 +109,7 @@ python3 -m http.server 8000 --directory docs
 # open http://localhost:8000
 ```
 
-The browser app embeds the sample invoice, supports file upload, runs every rule locally, and can download the full JSON report. No network calls, no dependencies.
+The browser app embeds the sample invoice, supports text invoice upload (`.txt`, `.eml`, `.md`, including Markdown tables), runs every rule locally, and can download the full JSON report. PDFs and images are not OCR-readable in this static demo. No network calls, no dependencies.
 
 ### Python CLI
 
@@ -246,6 +246,7 @@ ai-operations-mockup/
 │   ├── styles.css              # responsive visual system
 │   ├── engine.js               # parser + rules + agent simulation
 │   ├── app.js                  # browser UI controller
+│   ├── 404.html                # Pages fallback redirect
 │   └── sample_invoice.txt      # downloadable sample
 ├── tests/
 │   └── test_pipeline.py        # dependency-free regression tests

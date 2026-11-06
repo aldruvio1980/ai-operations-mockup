@@ -6,8 +6,44 @@ import copy
 import unittest
 
 from modules.agent_hook import run_local_agent
-from modules.parser import parse_invoice_file
+from modules.parser import parse_invoice, parse_invoice_file
 from modules.router import validate_and_route
+
+MARKDOWN_INVOICE = """# INVOICE
+
+**Invoice Number:** INV-2026-001
+**Invoice Date:** November 6, 2026
+**Due Date:** December 6, 2026
+
+### Billed By (Vendor):
+**Acme Solutions LLC**
+123 Business Rd, Suite 100
+New York, NY 10001
+Email: billing@acmesolutions.com
+Phone: (555) 019-2831
+
+### Billed To (Client):
+**Cambridge West NYC**
+456 Midtown Ave, Floor 12
+New York, NY 10018
+
+### Description of Services
+
+| Item | Description | Quantity | Rate | Amount |
+| :--- | :--- | :---: | :---: | :---: |
+| 1 | Operations & Workflow Automation Consulting | 10 hrs | $150.00 | $1,500.00 |
+| 2 | Data Pipeline Integration & Testing | 1 | $750.00 | $750.00 |
+| 3 | System Configuration & Setup | 1 | $500.00 | $500.00 |
+
+### Summary
+
+* **Subtotal:** $2,750.00
+* **Tax (8.875%):** $244.06
+* **Total Due:** **$2,994.06**
+
+### Payment Terms & Notes
+* Payment is due within 30 days of invoice date.
+"""
 
 
 class PipelineTests(unittest.TestCase):
@@ -71,6 +107,30 @@ class PipelineTests(unittest.TestCase):
         self.assertTrue(
             any(finding["rule_id"] == "R4_LINE_ARITHMETIC" for finding in result["findings"])
         )
+
+    def test_markdown_table_invoice_is_supported(self) -> None:
+        parsed = parse_invoice(MARKDOWN_INVOICE, "markdown_invoice.md")
+        self.assertEqual(parsed["supplier"]["name"], "Acme Solutions LLC")
+        self.assertEqual(parsed["supplier"]["email"], "billing@acmesolutions.com")
+        self.assertEqual(parsed["metadata"]["invoice_number"], "INV-2026-001")
+        self.assertEqual(parsed["metadata"]["invoice_date"], "2026-11-06")
+        self.assertEqual(parsed["metadata"]["due_date"], "2026-12-06")
+        self.assertEqual(parsed["metadata"]["payment_terms"], "Payment is due within 30 days of invoice date.")
+        self.assertEqual(len(parsed["line_items"]), 3)
+        self.assertEqual(parsed["line_items"][0]["unit"], "HRS")
+        self.assertEqual(parsed["line_items"][0]["quantity"], 10)
+        self.assertEqual(parsed["line_items"][0]["unit_price"], 150.00)
+        self.assertEqual(parsed["line_items"][0]["computed_line_total"], 1500.00)
+        self.assertEqual(parsed["totals_declared"]["subtotal"], 2750.00)
+        self.assertEqual(parsed["totals_declared"]["tax_rate_percent"], 8.875)
+        self.assertEqual(parsed["totals_declared"]["tax_amount"], 244.06)
+        self.assertEqual(parsed["totals_declared"]["total_due"], 2994.06)
+        self.assertFalse(parsed["parse_warnings"])
+
+        validation = validate_and_route(parsed)
+        self.assertEqual(validation["totals"]["computed_subtotal"], 2750.00)
+        self.assertEqual(validation["totals"]["computed_total_due"], 2994.06)
+        self.assertEqual(validation["status"], "ESCALATE")
 
 
 if __name__ == "__main__":

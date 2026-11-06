@@ -37,7 +37,7 @@
         <div class="hero-actions">
           <button id="run-demo" class="btn btn-primary" type="button">Run guided demo <span aria-hidden="true">→</span></button>
           <label class="btn btn-secondary file-btn" for="file-input">Upload invoice</label>
-          <input id="file-input" class="visually-hidden" type="file" accept=".txt,.eml,.md,text/plain">
+          <input id="file-input" class="visually-hidden" type="file" accept=".txt,.eml,.md,.markdown,.csv,text/plain,text/markdown,text/csv">
           <button id="reset-sample" class="btn btn-ghost" type="button">Reset sample</button>
         </div>
         <p class="hero-hint">Python CLI included · this browser version mirrors the same pipeline · no data leaves your machine</p>
@@ -83,7 +83,7 @@
         <div id="dropzone" class="dropzone">
           <span class="drop-icon" aria-hidden="true">↓</span>
           <p><strong>Drop a text invoice</strong> or <label class="inline-upload" for="file-input">browse files</label></p>
-          <small>.txt, .eml, .md · parsed locally in your browser</small>
+          <small>.txt, .eml, .md · text only, no OCR · parsed locally in your browser</small>
         </div>
 
         <pre id="raw-preview" class="raw-preview" aria-label="Raw invoice text"></pre>
