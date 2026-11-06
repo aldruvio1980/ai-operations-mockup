@@ -3,13 +3,18 @@
 > **From PDFs, spreadsheets, and email → to one real-time truth.**
 > A lightweight, local-first demo of an AI-assisted operations system for construction and logistics.
 
+**Live browser demo:** https://aldruvio1980.github.io/ai-operations-mockup/  
+**Repository:** https://github.com/aldruvio1980/ai-operations-mockup
+
+The project ships in two forms: a zero-dependency **Python CLI** and a fully static **HTML/CSS/JavaScript browser app** deployed with GitHub Pages. Both run the same parser → rules → AI-action pipeline locally.
+
 ---
 
 ## Executive summary
 
 Construction and logistics teams still run critical purchasing decisions through a fragile chain of scanned PDFs, forwarded email threads, supplier spreadsheets, and "please verify" notes from the field. Accounts Payable cannot tell whether an invoiced quantity was actually received. Procurement cannot see which delivery exception threatens the schedule. Finance cannot release payment without manually rebuilding the math.
 
-**ai-operations-mockup** demonstrates a different operating model in a single terminal session:
+**ai-operations-mockup** demonstrates a different operating model in a single terminal session or browser tab:
 
 1. A messy supplier invoice is ingested as raw text.
 2. Deterministic code extracts the operational entities and **recalculates every dollar**.
@@ -77,16 +82,39 @@ sample_data/mock_invoice.txt
 │ main.py                      │  Interactive terminal experience
 │ guided demo · menu · JSON    │  real-time truth dashboard
 └──────────────────────────────┘
+
+Browser edition (GitHub Pages):
+docs/index.html + docs/engine.js + docs/app.js
+Same parser, rules, agent simulation, and dashboard contract.
 ```
 
 ---
 
 ## Quick start (under 60 seconds)
 
-**Requirements:** Python 3.10+ and a terminal. No database, API key, Docker, or cloud account.
+**Requirements:** Python 3.10+ and a terminal for the CLI. The browser edition only needs a browser.
+
+### Browser demo (no setup)
+
+Open the live demo:
+
+```text
+https://aldruvio1980.github.io/ai-operations-mockup/
+```
+
+Or run it locally from a clone:
 
 ```bash
-git clone <your-repository-url> ai-operations-mockup
+python3 -m http.server 8000 --directory docs
+# open http://localhost:8000
+```
+
+The browser app embeds the sample invoice, supports file upload, runs every rule locally, and can download the full JSON report. No network calls, no dependencies.
+
+### Python CLI
+
+```bash
+git clone https://github.com/aldruvio1980/ai-operations-mockup.git
 cd ai-operations-mockup
 python3 main.py
 ```
@@ -158,7 +186,9 @@ The guided demo walks through five stages: **ingest → extract → validate →
 - Produces a timestamped action log, prioritised actions with named owners and due windows, a field brief, and a draft supplier follow-up.
 - Makes **no network calls** and uses **no model SDK** in this demo. The heuristics simulate a local LLM adapter while keeping the output contract stable.
 
-**Production seam:** replace the private `_synthesise()` function with an adapter for a local model (for example Ollama or llama.cpp) that returns the same JSON shape. The deterministic parser, router, dashboard, and audit contract do not change.
+**Browser port:** `docs/engine.js` mirrors the Python parser, rules, and agent heuristics so the static web demo produces the same sample result: `REVIEW`, risk 66/100, `$45,342.64` computed total, and the same field exceptions. `docs/app.js` is the presentation layer.
+
+**Production seam:** replace the private `_synthesise()` function (Python) or `synthesise()` function (browser) with an adapter for a local model (for example Ollama or llama.cpp) that returns the same JSON shape. The deterministic parser, router, dashboard, and audit contract do not change.
 
 ### Separation of responsibilities
 
@@ -176,7 +206,7 @@ The guided demo walks through five stages: **ingest → extract → validate →
 
 ## Business rules in the demo
 
-Thresholds live at the top of `modules/router.py` so they are easy to review and change.
+Thresholds live at the top of `modules/router.py` and `docs/engine.js` so they are easy to review and change.
 
 | Rule | Control |
 |---|---|
@@ -211,6 +241,12 @@ ai-operations-mockup/
 │   └── agent_hook.py           # local AI simulation layer
 ├── sample_data/
 │   └── mock_invoice.txt        # messy construction/logistics invoice
+├── docs/                       # static browser app (GitHub Pages)
+│   ├── index.html              # dashboard shell
+│   ├── styles.css              # responsive visual system
+│   ├── engine.js               # parser + rules + agent simulation
+│   ├── app.js                  # browser UI controller
+│   └── sample_invoice.txt      # downloadable sample
 ├── tests/
 │   └── test_pipeline.py        # dependency-free regression tests
 └── output/                     # created on export (git-ignored)
@@ -259,7 +295,7 @@ This is a mockup, not a production AP system. It contains synthetic data, no aut
 
 ---
 
-## Repository location
+## Repository location and deployment
 
 On this machine the project lives at:
 
@@ -267,20 +303,25 @@ On this machine the project lives at:
 ~/Desktop/ai-operations-mockup
 ```
 
-To publish it to GitHub after creating an empty repository:
+The browser edition is served by GitHub Pages from the `docs/` folder on `main`. After changing the web app:
 
 ```bash
 cd ~/Desktop/ai-operations-mockup
-git init
 git add .
-git commit -m "Build AI operations mockup for construction logistics"
-git branch -M main
-git remote add origin https://github.com/<your-account>/ai-operations-mockup.git
-git push -u origin main
+git commit -m "Update browser demo"
+git push
 ```
 
-Or with the GitHub CLI:
+GitHub Pages rebuilds automatically. To check the deployment status:
 
 ```bash
-gh repo create ai-operations-mockup --public --source=. --remote=origin --push
+gh api repos/aldruvio1980/ai-operations-mockup/pages
+```
+
+The CLI remains available from the repository root:
+
+```bash
+python3 main.py --demo
+python3 main.py --json
+python3 -m unittest discover -s tests -v
 ```

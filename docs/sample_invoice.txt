@@ -1,0 +1,44 @@
+From: billing@apexsteelsupply.com
+To: accounts@northlineconstruct.com
+Subject: INVOICE INV-88421 / PO NC-2026-0447 - Northline Tower Phase 2
+Date: Tue, 03 Nov 2026 09:14:22 -0500
+
+Hi Accounts,
+
+Please find the scanned invoice below for the Northline Tower Phase 2 job.
+The original PDF was forwarded from the site office, so the formatting is a
+little rough. Deliveries were split between Yard B and the 14th Street gate.
+
+------------------------------------------------------------
+APEX STEEL & SUPPLY CO.
+1420 Foundry Road, Newark, NJ 07105
+billing@apexsteelsupply.com  |  (973) 555-0184
+------------------------------------------------------------
+
+INVOICE NO: INV-88421
+INVOICE DATE: 11/03/2026
+DUE DATE: 12/03/2026
+PO NUMBER: NC-2026-0447
+PROJECT: Northline Tower - Phase 2
+SHIP VIA: Flatbed (3 drops)
+
+LINE ITEMS
+1. W24x76 A992 STEEL BEAM, 24 ft ....... 18 EA @ $1,425.00 = $25,650.00
+2. 5000 PSI CONCRETE MIX (ready-mix) ... 42 CY @ $185.50 = $7,791.00
+3. #5 REBAR, 20 ft sticks ............... 260 EA @ $18.75 = $4,875.00
+4. ANSI Z89.1 HARD HATS - HI-VIS ORANGE  120 EA @ $14.25 = $1,710.00
+5. Cut-resistant gloves (pair), L ....... 80 PR @ $9.40 = $752.00
+6. 3M N95 RESPIRATOR MASKS ............... 500 EA @ $1.15 = $575.00
+
+SUBTOTAL: $41,353.00
+FREIGHT / DELIVERY: $1,250.00
+NJ SALES TAX (6.625%): $2,739.63
+TOTAL DUE: $45,342.63
+
+Notes:
+- Beam drop 2 arrived 2 days late; driver noted a forklift delay at Yard B.
+- Hard hat count may be short by 12 units. Please verify against packing slip.
+- Rebar was substituted with an equivalent grade; mill certs attached in PDF.
+- Contact site super M. Alvarez (m.alvarez@northlineconstruct.com) for delivery questions.
+
+Payment terms: Net 30. Remit to billing@apexsteelsupply.com
