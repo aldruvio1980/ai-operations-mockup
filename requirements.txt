@@ -1,0 +1,5 @@
+# ai-operations-mockup uses only the Python standard library.
+# Python 3.10+ is required; no third-party packages are needed.
+#
+# Tests also use the standard library:
+#   python3 -m unittest discover -s tests -v
